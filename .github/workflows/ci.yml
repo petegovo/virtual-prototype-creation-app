@@ -1,0 +1,324 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  backend-test:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        python-version: [3.8, 3.9, "3.10", "3.11"]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        cd backend
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-asyncio pytest-cov httpx
+    
+    - name: Create test directories
+      run: |
+        mkdir -p uploads database
+    
+    - name: Run backend tests
+      run: |
+        cd backend
+        python -m pytest tests/ -v --cov=. --cov-report=xml --cov-report=html
+      env:
+        DATABASE_URL: sqlite:///./test.db
+        UPLOAD_DIR: ../uploads
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./backend/coverage.xml
+        flags: backend
+        name: backend-coverage
+        fail_ci_if_error: false
+
+  frontend-test:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+    
+    - name: Install dependencies
+      run: |
+        cd frontend
+        npm ci
+    
+    - name: Run linting
+      run: |
+        cd frontend
+        npm run lint
+    
+    - name: Run type checking
+      run: |
+        cd frontend
+        npm run type-check
+    
+    - name: Run tests
+      run: |
+        cd frontend
+        npm run test:ci
+    
+    - name: Build application
+      run: |
+        cd frontend
+        npm run build
+    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: frontend-build-${{ matrix.node-version }}
+        path: frontend/dist/
+
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: [backend-test, frontend-test]
+    
+    services:
+      backend:
+        image: python:3.10
+        options: --health-cmd "curl -f http://localhost:8000/health || exit 1" --health-interval 30s --health-timeout 10s --health-retries 5
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18.x'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+    
+    - name: Install backend dependencies
+      run: |
+        cd backend
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Install frontend dependencies
+      run: |
+        cd frontend
+        npm ci
+    
+    - name: Create test directories
+      run: |
+        mkdir -p uploads database
+    
+    - name: Start backend server
+      run: |
+        cd backend
+        python main.py &
+        sleep 10
+      env:
+        DATABASE_URL: sqlite:///./test.db
+        UPLOAD_DIR: ../uploads
+    
+    - name: Build frontend
+      run: |
+        cd frontend
+        npm run build
+    
+    - name: Run integration tests
+      run: |
+        # Test backend health
+        curl -f http://localhost:8000/health
+        
+        # Test API endpoints
+        curl -f http://localhost:8000/api/fmi/list
+        curl -f http://localhost:8000/api/ssp/list
+        curl -f http://localhost:8000/api/projects/list
+        
+        # Test OpenAPI documentation
+        curl -f http://localhost:8000/docs
+        curl -f http://localhost:8000/openapi.json
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+    
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+    
+    - name: Run Bandit security linter for Python
+      run: |
+        pip install bandit
+        bandit -r backend/ -f json -o bandit-report.json || true
+    
+    - name: Upload security scan results
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-reports
+        path: |
+          trivy-results.sarif
+          bandit-report.json
+
+  code-quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install Python quality tools
+      run: |
+        pip install black isort flake8 mypy
+    
+    - name: Check Python code formatting with Black
+      run: |
+        black --check backend/
+    
+    - name: Check Python import sorting with isort
+      run: |
+        isort --check-only backend/
+    
+    - name: Lint Python code with flake8
+      run: |
+        flake8 backend/ --max-line-length=88 --extend-ignore=E203,W503
+    
+    - name: Type check Python code with mypy
+      run: |
+        mypy backend/ --ignore-missing-imports
+    
+    - name: Set up Node.js for frontend quality checks
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18.x'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+    
+    - name: Install frontend dependencies
+      run: |
+        cd frontend
+        npm ci
+    
+    - name: Check frontend code formatting with Prettier
+      run: |
+        cd frontend
+        npm run format:check
+    
+    - name: Lint frontend code with ESLint
+      run: |
+        cd frontend
+        npm run lint
+
+  build-and-deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
+    needs: [backend-test, frontend-test, integration-test, security-scan, code-quality]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+    
+    - name: Build and push backend Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./backend
+        push: true
+        tags: |
+          ${{ secrets.DOCKER_USERNAME }}/virtual-prototype-backend:latest
+          ${{ secrets.DOCKER_USERNAME }}/virtual-prototype-backend:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Build and push frontend Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./frontend
+        push: true
+        tags: |
+          ${{ secrets.DOCKER_USERNAME }}/virtual-prototype-frontend:latest
+          ${{ secrets.DOCKER_USERNAME }}/virtual-prototype-frontend:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Deploy to staging
+      run: |
+        echo "Deploying to staging environment..."
+        # Add your deployment commands here
+        # For example, using kubectl, docker-compose, or cloud provider CLI
+    
+    - name: Run smoke tests
+      run: |
+        echo "Running smoke tests on staging..."
+        # Add smoke test commands here
+    
+    - name: Notify deployment
+      uses: 8398a7/action-slack@v3
+      if: always()
+      with:
+        status: ${{ job.status }}
+        text: 'Virtual Prototype App deployment completed'
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

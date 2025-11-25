@@ -1,0 +1,109 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+  
+  body {
+    @apply bg-gray-50 text-gray-900;
+  }
+  
+  * {
+    @apply border-gray-200;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none ring-offset-background;
+  }
+  
+  .btn-primary {
+    @apply btn bg-primary-600 text-white hover:bg-primary-700 h-10 py-2 px-4;
+  }
+  
+  .btn-secondary {
+    @apply btn bg-secondary-100 text-secondary-900 hover:bg-secondary-200 h-10 py-2 px-4;
+  }
+  
+  .btn-outline {
+    @apply btn border border-input hover:bg-accent hover:text-accent-foreground h-10 py-2 px-4;
+  }
+  
+  .card {
+    @apply rounded-lg border bg-white text-card-foreground shadow-sm;
+  }
+  
+  .card-header {
+    @apply flex flex-col space-y-1.5 p-6;
+  }
+  
+  .card-content {
+    @apply p-6 pt-0;
+  }
+  
+  .input {
+    @apply flex h-10 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  
+  .label {
+    @apply text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-100;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-400;
+}
+
+/* Loading animations */
+.animate-pulse-slow {
+  animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Three.js canvas styling */
+.three-canvas {
+  @apply rounded-lg border;
+}
+
+/* File upload dropzone */
+.dropzone {
+  @apply border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-primary-400 transition-colors;
+}
+
+.dropzone.active {
+  @apply border-primary-500 bg-primary-50;
+}
+
+/* Simulation status indicators */
+.status-running {
+  @apply bg-green-100 text-green-800;
+}
+
+.status-stopped {
+  @apply bg-gray-100 text-gray-800;
+}
+
+.status-error {
+  @apply bg-red-100 text-red-800;
+}
+
+.status-warning {
+  @apply bg-yellow-100 text-yellow-800;
+}

@@ -1,0 +1,204 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Generate changelog
+      id: changelog
+      run: |
+        # Generate changelog from git commits
+        echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+        git log --pretty=format:"- %s (%h)" $(git describe --tags --abbrev=0 HEAD^)..HEAD >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+    
+    - name: Create Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        body: |
+          ## Changes in this Release
+          ${{ steps.changelog.outputs.CHANGELOG }}
+          
+          ## Features
+          - FMI 3.0 support for SystemC, Simulink, and Modelica models
+          - SSP 2.0 system structure and parameterization
+          - Web-based virtual prototype creation
+          - Real-time simulation and visualization
+          - Project management and collaboration
+          
+          ## Installation
+          
+          ### Docker (Recommended)
+          ```bash
+          docker run -p 8000:8000 virtualprototype/backend:${{ github.ref_name }}
+          docker run -p 3000:3000 virtualprototype/frontend:${{ github.ref_name }}
+          ```
+          
+          ### Manual Installation
+          See the [README.md](README.md) for detailed installation instructions.
+        draft: false
+        prerelease: false
+
+  build-release-artifacts:
+    name: Build Release Artifacts
+    runs-on: ubuntu-latest
+    needs: create-release
+    
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: windows-latest
+            platform: windows
+          - os: macos-latest
+            platform: macos
+    
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18.x'
+    
+    - name: Install backend dependencies
+      run: |
+        cd backend
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+    
+    - name: Install frontend dependencies
+      run: |
+        cd frontend
+        npm ci
+    
+    - name: Build frontend
+      run: |
+        cd frontend
+        npm run build
+    
+    - name: Package backend (Linux/macOS)
+      if: matrix.platform != 'windows'
+      run: |
+        cd backend
+        pyinstaller --onefile --name virtual-prototype-backend main.py
+        tar -czf virtual-prototype-backend-${{ matrix.platform }}.tar.gz dist/virtual-prototype-backend
+    
+    - name: Package backend (Windows)
+      if: matrix.platform == 'windows'
+      run: |
+        cd backend
+        pyinstaller --onefile --name virtual-prototype-backend.exe main.py
+        7z a virtual-prototype-backend-windows.zip dist/virtual-prototype-backend.exe
+    
+    - name: Package frontend
+      run: |
+        cd frontend
+        tar -czf virtual-prototype-frontend-${{ matrix.platform }}.tar.gz dist/
+    
+    - name: Upload release assets (Linux/macOS)
+      if: matrix.platform != 'windows'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: ./backend/virtual-prototype-backend-${{ matrix.platform }}.tar.gz
+        asset_name: virtual-prototype-backend-${{ matrix.platform }}.tar.gz
+        asset_content_type: application/gzip
+    
+    - name: Upload release assets (Windows)
+      if: matrix.platform == 'windows'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: ./backend/virtual-prototype-backend-windows.zip
+        asset_name: virtual-prototype-backend-windows.zip
+        asset_content_type: application/zip
+
+  docker-release:
+    name: Docker Release
+    runs-on: ubuntu-latest
+    needs: create-release
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+    
+    - name: Extract version from tag
+      id: version
+      run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+    
+    - name: Build and push backend Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./backend
+        push: true
+        tags: |
+          ${{ secrets.DOCKER_USERNAME }}/virtual-prototype-backend:${{ steps.version.outputs.VERSION }}
+          ${{ secrets.DOCKER_USERNAME }}/virtual-prototype-backend:latest
+        platforms: linux/amd64,linux/arm64
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Build and push frontend Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./frontend
+        push: true
+        tags: |
+          ${{ secrets.DOCKER_USERNAME }}/virtual-prototype-frontend:${{ steps.version.outputs.VERSION }}
+          ${{ secrets.DOCKER_USERNAME }}/virtual-prototype-frontend:latest
+        platforms: linux/amd64,linux/arm64
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Update Docker Hub description
+      uses: peter-evans/dockerhub-description@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+        repository: ${{ secrets.DOCKER_USERNAME }}/virtual-prototype-backend
+        readme-filepath: ./backend/README.md
+    
+    - name: Update Docker Hub description (Frontend)
+      uses: peter-evans/dockerhub-description@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+        repository: ${{ secrets.DOCKER_USERNAME }}/virtual-prototype-frontend
+        readme-filepath: ./frontend/README.md
