@@ -60,19 +60,45 @@ A comprehensive web-based application for creating virtual prototypes using Syst
 
 ## 📦 Installation
 
-### Prerequisites
+### Quick Start with Podman (Recommended)
+
+1. **Install Podman**:
+   ```bash
+   # Ubuntu/Debian
+   sudo apt-get install -y podman
+   
+   # RHEL/CentOS/Fedora
+   sudo dnf install -y podman
+   
+   # macOS
+   brew install podman
+   ```
+
+2. **Run setup script**:
+   ```bash
+   ./setup-podman.sh
+   ```
+
+3. **Access the application**:
+   - Frontend: http://localhost:3000
+   - Backend API: http://localhost:8000
+   - API Documentation: http://localhost:8000/docs
+
+### Manual Installation
+
+#### Prerequisites
 - Python 3.8+
 - Node.js 18+
 - npm or yarn
 
-### Backend Setup
+#### Backend Setup
 ```bash
 cd backend
 pip install -r requirements.txt
 python main.py
 ```
 
-### Frontend Setup
+#### Frontend Setup
 ```bash
 cd frontend
 npm install

@@ -5,7 +5,7 @@ This guide covers various deployment options for the Virtual Prototype Creation 
 ## Table of Contents
 
 1. [Local Development](#local-development)
-2. [Docker Deployment](#docker-deployment)
+2. [Podman Deployment](#podman-deployment)
 3. [Cloud Deployment](#cloud-deployment)
 4. [Production Considerations](#production-considerations)
 5. [Monitoring and Logging](#monitoring-and-logging)
@@ -55,33 +55,45 @@ This guide covers various deployment options for the Virtual Prototype Creation 
    - Backend API: http://localhost:8000
    - API Documentation: http://localhost:8000/docs
 
-## Docker Deployment
+## Podman Deployment
 
-### Quick Start with Docker Compose
+### Quick Start with Podman Compose
 
-1. **Clone and start**:
+1. **Install Podman and podman-compose**:
+   ```bash
+   # On Ubuntu/Debian
+   sudo apt-get update
+   sudo apt-get install -y podman
+   pip install podman-compose
+   
+   # On RHEL/CentOS/Fedora
+   sudo dnf install -y podman
+   pip install podman-compose
+   ```
+
+2. **Clone and start**:
    ```bash
    git clone https://github.com/YOUR_USERNAME/virtual-prototype-creation-app.git
    cd virtual-prototype-creation-app
-   docker-compose up -d
+   podman-compose up -d
    ```
 
-2. **Access the application**:
+3. **Access the application**:
    - Frontend: http://localhost:3000
    - Backend API: http://localhost:8000
 
-### Production Docker Compose
+### Production Podman Compose
 
 For production with PostgreSQL and Redis:
 
 ```bash
 # Start with production profile
-docker-compose --profile production up -d
+podman-compose --profile production up -d
 
 # Or create a production override file
-cp docker-compose.yml docker-compose.prod.yml
-# Edit docker-compose.prod.yml for production settings
-docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+cp podman-compose.yml podman-compose.prod.yml
+# Edit podman-compose.prod.yml for production settings
+podman-compose -f podman-compose.yml -f podman-compose.prod.yml up -d
 ```
 
 ### Individual Container Deployment
@@ -89,28 +101,28 @@ docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 1. **Build images**:
    ```bash
    # Backend
-   docker build -t virtual-prototype-backend ./backend
+   podman build -t virtual-prototype-backend ./backend
 
    # Frontend
-   docker build -t virtual-prototype-frontend ./frontend
+   podman build -t virtual-prototype-frontend ./frontend
    ```
 
 2. **Run containers**:
    ```bash
    # Create network
-   docker network create virtual-prototype-network
+   podman network create virtual-prototype-network
 
    # Run backend
-   docker run -d \
+   podman run -d \
      --name backend \
      --network virtual-prototype-network \
      -p 8000:8000 \
-     -v $(pwd)/uploads:/app/uploads \
-     -v $(pwd)/database:/app/database \
+     -v $(pwd)/uploads:/app/uploads:Z \
+     -v $(pwd)/database:/app/database:Z \
      virtual-prototype-backend
 
    # Run frontend
-   docker run -d \
+   podman run -d \
      --name frontend \
      --network virtual-prototype-network \
      -p 3000:3000 \
@@ -564,19 +576,25 @@ logger.setLevel(logging.INFO)
    psql -h localhost -U vpuser -d virtual_prototype -c "SELECT 1;"
    ```
 
-3. **Docker issues**:
+3. **Podman issues**:
    ```bash
    # Check container logs
-   docker logs container_name
+   podman logs container_name
    # Restart containers
-   docker-compose restart
+   podman-compose restart
+   
+   # Check rootless configuration
+   podman system info
+   
+   # Reset user namespace if needed
+   podman system migrate
    ```
 
 4. **Memory issues**:
    ```bash
    # Monitor memory usage
-   docker stats
-   # Increase container memory limits
+   podman stats
+   # Increase container memory limits in compose file
    ```
 
 ### Performance Monitoring
